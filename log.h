@@ -15,6 +15,9 @@
 #include <unordered_map>
 #include <functional>
 #include <sstream>
+#include <fmt/core.h>
+#include <source_location>
+#include "utils.h"
 
 namespace sylar {
 
@@ -68,6 +71,7 @@ namespace sylar {
         uint32_t m_fiberId = 0;         //协程号
         uint64_t m_time = 0;
         std::string m_thread_name;
+        std::stringstream m_content_stream;
     public:
         // [[nodiscard]] 为不应该舍弃返回值，若舍弃返回值，编译器会warning
         [[nodiscard]] const std::string &getFileName() const;
@@ -96,21 +100,13 @@ namespace sylar {
 
         [[nodiscard]] std::string getContent() const;
 
-        void setContent(const std::string &mContent);
-
-        [[nodiscard]] std::shared_ptr<Logger> getLogger() const;
-
-        void setLogger(std::shared_ptr<Logger> logger);
+        void setContent(const std::string &content);
 
         [[nodiscard]] std::string getThreadName() const;
 
         void setThreadName(const std::string &thread_name);
 
-    private:
-        //时间戳
-        std::string m_content;          //日志信息
-        std::shared_ptr<Logger> m_logger;
-
+        [[nodiscard]] std::stringstream& getContentStream();
 
     };
 
@@ -119,12 +115,16 @@ namespace sylar {
     public:
         typedef std::shared_ptr<LogFormatter> ptr;
 
+        LogFormatter() : LogFormatter("%d{%Y-%m-%d %H:%M:%S}%T%t%T%N%T%F%T[%p]%T[%c]%T%f:%l%T%m%n") {}
+
         LogFormatter(const std::string &pattern);
 
         std::string format(const std::shared_ptr<Logger> &logger, LogLevel::Level level, LogEvent::ptr event);
 
         std::ostream &
         format(std::ostream &os, const std::shared_ptr<Logger> &logger, LogLevel::Level level, LogEvent::ptr event);
+
+        void reset(const std::string &pattern);
 
     public:
         class FormatItem {
@@ -162,12 +162,15 @@ namespace sylar {
         LogFormatter::ptr m_formatter;
     };
 
-    class Logger : public std::enable_shared_from_this<Logger>{
+    class Logger : public std::enable_shared_from_this<Logger> {
     public:
         typedef std::shared_ptr<Logger> ptr;
 
-        Logger(const std::string &name = "root", LogLevel::Level level = LogLevel::Level::FATAL) :
-                m_name(name), m_level(level) {}
+        Logger(const std::string &name = "root", LogLevel::Level level = LogLevel::Level::DEBUG,
+               const std::string &log_format_pattern = "%d{%Y-%m-%d %H:%M:%S}%T%t%T%N%T%F%T[%p]%T[%c]%T%f:%l%T%m%n") :
+                m_name(name), m_level(level) {
+
+        }
 
         void log(LogLevel::Level level, LogEvent::ptr event);
 
@@ -197,6 +200,7 @@ namespace sylar {
         std::string m_name;
         LogLevel::Level m_level;
         std::unordered_set<LogAppender::ptr> m_appenders;
+        LogFormatter::ptr log_formatter;
     };
 
     class StdoutLogAppender : public LogAppender {
@@ -218,5 +222,29 @@ namespace sylar {
         std::string m_file_name;
         std::ofstream m_filestream;
     };
+
+    class LoggerManager
+    {
+    public:
+
+        // 单例模式
+        static LoggerManager& getInstance()
+        {
+            static LoggerManager instance;
+            return instance;
+        }
+        Logger::ptr getLogger(const std::string& name="root");
+        Logger::ptr getRoot() const {return m_root;}
+        void addLogger(const std::string& name);
+    private:
+        LoggerManager();
+        std::unordered_map<std::string, Logger::ptr> m_loggers;
+        Logger::ptr m_root;
+    };
+
+
+
+
+
 }
 #endif //SYLAR_WEB_SERVER_LOG_H

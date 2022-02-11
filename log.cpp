@@ -5,6 +5,7 @@
 #include <iostream>
 #include "log.h"
 
+
 namespace sylar {
     void Logger::log(sylar::LogLevel::Level level, sylar::LogEvent::ptr event) {
         if (level < m_level)
@@ -32,6 +33,9 @@ namespace sylar {
     }
 
     void Logger::addAppender(LogAppender::ptr appender) {
+        if (!appender->getFormatter()) {
+            appender->setFormatter(log_formatter);
+        }
         m_appenders.insert(appender);
     }
 
@@ -162,7 +166,7 @@ namespace sylar {
 
         void
         format(std::ostream &os, std::shared_ptr<Logger> logger, LogLevel::Level level, LogEvent::ptr event) override {
-            os << event->getLogger()->getName();
+            os << 0;
         }
     };
 
@@ -220,8 +224,7 @@ namespace sylar {
 
 
     LogFormatter::LogFormatter(const std::string &pattern) {
-        m_pattern = pattern;
-        init();
+        reset(pattern);
     }
 
     void LogFormatter::init() {
@@ -229,7 +232,6 @@ namespace sylar {
         size_t last_pos = 0;
         std::string word_str;
         int fmt_version = 0;
-        std::string fmt_flag;
         for (size_t i = 0; i < m_pattern.size(); i++) {
             if (m_pattern[i] != '%') {
                 word_str += m_pattern[i];
@@ -242,7 +244,7 @@ namespace sylar {
             }
 
             size_t n = i + 1;
-            fmt_flag = m_pattern[n];
+            std::string fmt_flag;
             std::string fmt_msg;
             while (n < m_pattern.size()) {
                 if (!fmt_version && !isalpha(m_pattern[n]) && m_pattern[n] != '{') {
@@ -272,6 +274,8 @@ namespace sylar {
 
             if (!fmt_flag.empty())
                 vec.push_back(std::make_tuple(fmt_flag, fmt_msg, 0));
+
+            i = n - 1;
         }
         if (!word_str.empty())
             vec.push_back(std::make_tuple("", word_str, 0));
@@ -314,7 +318,7 @@ namespace sylar {
             if (iter != s_format_items_map.end()) {
                 m_items.push_back(iter->second(std::get<1>(item)));
             } else {
-                m_items.push_back(FormatItem::ptr(new StringFormatItem(std::get<0>(item))));
+                m_items.push_back(FormatItem::ptr(new StringFormatItem(std::get<1>(item))));
             }
 
         }
@@ -339,6 +343,11 @@ namespace sylar {
             item->format(os, logger, level, event);
         }
         return os;
+    }
+
+    void LogFormatter::reset(const std::string &pattern) {
+        m_pattern = pattern;
+        init();
     }
 
     const std::string &LogEvent::getFileName() const {
@@ -390,19 +399,12 @@ namespace sylar {
     }
 
     std::string LogEvent::getContent() const {
-        return m_content;
+        return m_content_stream.str();
     }
 
-    void LogEvent::setContent(const std::string &mContent) {
-        m_content = mContent;
-    }
-
-    std::shared_ptr<Logger> LogEvent::getLogger() const {
-        return m_logger;
-    }
-
-    void LogEvent::setLogger(std::shared_ptr<Logger> logger) {
-        m_logger = logger;
+    void LogEvent::setContent(const std::string &content) {
+        m_content_stream.clear();
+        m_content_stream << content;
     }
 
     std::string LogEvent::getThreadName() const {
@@ -412,5 +414,32 @@ namespace sylar {
     void LogEvent::setThreadName(const std::string &thread_name) {
         m_thread_name = thread_name;
     }
+
+    std::stringstream &LogEvent::getContentStream() {
+        return m_content_stream;
+    }
+
+    LoggerManager::LoggerManager() {
+        m_root.reset(new Logger);
+        m_root->addAppender(LogAppender::ptr (new StdoutLogAppender));
+        m_loggers[m_root->getName()] = m_root;
+    }
+
+
+    Logger::ptr LoggerManager::getLogger(const std::string &name) {
+
+        if(m_loggers.find(name) == m_loggers.end())
+            throw std::invalid_argument("123");
+        return m_loggers[name];
+
+    }
+
+    void LoggerManager::addLogger(const std::string &name) {
+        if(m_loggers.find(name) != m_loggers.end())
+            return;
+        Logger::ptr logger(new Logger(name));
+        m_loggers[name] = logger;
+    }
+
 
 }
